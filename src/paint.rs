@@ -78,7 +78,7 @@ impl<'p> Painter<'p> {
                 &config.line_numbers_format,
                 panel_width_fix,
             ))
-        } else if config.side_by_side {
+        } else if config.display_mode != config::DisplayMode::Inline {
             // If line numbers are disabled in side-by-side then the data is still used
             // for width calculation and to pad odd width to even, see `UseFullPanelWidth`
             // for details.
@@ -182,7 +182,7 @@ impl<'p> Painter<'p> {
             &[false],
             self.config,
         );
-        if self.config.side_by_side {
+        if self.config.display_mode != config::DisplayMode::Inline {
             // `lines[0].0` so the line has the '\n' already added (as in the +- case)
             side_by_side::paint_zero_lines_side_by_side(
                 &lines[0].0,
@@ -640,7 +640,18 @@ pub fn paint_minus_and_plus_lines(
         &lines_have_homolog[Plus],
         config,
     );
-    if config.side_by_side {
+
+    // Determine whether to use side-by-side mode for this hunk
+    let use_side_by_side = match config.display_mode {
+        config::DisplayMode::SideBySide => true,
+        config::DisplayMode::Inline => false,
+        config::DisplayMode::SideBySideIfMixed => {
+            // Use side-by-side only if hunk has both additions and deletions
+            !lines[Minus].is_empty() && !lines[Plus].is_empty()
+        }
+    };
+
+    if use_side_by_side {
         side_by_side::paint_minus_and_plus_lines_side_by_side(
             lines,
             syntax_style_sections,

@@ -149,7 +149,7 @@ pub fn show_config(config: &config::Config, writer: &mut dyn Write) -> std::io::
             PagingMode::QuitIfOneScreen => "auto",
             PagingMode::Capture => unreachable!("capture can not be set"),
         },
-        side_by_side = config.side_by_side,
+        side_by_side = config.display_mode,
         syntax_theme = config
             .syntax_theme
             .clone()

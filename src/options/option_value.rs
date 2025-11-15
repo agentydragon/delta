@@ -55,6 +55,9 @@ impl From<OptionValue> for Option<String> {
     fn from(value: OptionValue) -> Self {
         match value {
             OptionValue::OptionString(value) => value,
+            OptionValue::Boolean(true) => Some("true".to_string()),
+            OptionValue::Boolean(false) => Some("false".to_string()),
+            OptionValue::String(s) => Some(s),
             _ => delta_unreachable("Error converting OptionValue to Option<String>."),
         }
     }

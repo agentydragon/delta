@@ -127,7 +127,7 @@ pub struct Config {
     pub relative_paths: bool,
     pub show_themes: bool,
     pub side_by_side_data: side_by_side::SideBySideData,
-    pub side_by_side: bool,
+    pub display_mode: DisplayMode,
     pub syntax_set: SyntaxSet,
     pub syntax_theme: Option<SyntaxTheme>,
     pub tab_cfg: utils::tabs::TabCfg,
@@ -143,6 +143,28 @@ pub struct Config {
 pub enum GrepType {
     Ripgrep,
     Classic,
+}
+
+/// How to display diffs: side-by-side, inline, or automatically chosen per-hunk.
+#[derive(Debug, Eq, PartialEq, Clone, Copy, Default)]
+pub enum DisplayMode {
+    /// Always display diffs side-by-side.
+    SideBySide,
+    /// Always display diffs inline (traditional unified diff format).
+    #[default]
+    Inline,
+    /// Use side-by-side for hunks with both additions and deletions, inline for pure-add or pure-delete hunks.
+    SideBySideIfMixed,
+}
+
+impl std::fmt::Display for DisplayMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DisplayMode::SideBySide => write!(f, "always"),
+            DisplayMode::Inline => write!(f, "never"),
+            DisplayMode::SideBySideIfMixed => write!(f, "if-mixed"),
+        }
+    }
 }
 
 #[cfg_attr(test, derive(Clone))]
@@ -389,7 +411,7 @@ impl From<cli::Opt> for Config {
             line_buffer_size: opt.line_buffer_size,
             max_line_distance: opt.max_line_distance,
             max_line_distance_for_naively_paired_lines,
-            max_line_length: if opt.side_by_side {
+            max_line_length: if opt.computed.display_mode != DisplayMode::Inline {
                 wrap_config.config_max_line_length(
                     opt.max_line_length,
                     opt.computed.available_terminal_width,
@@ -423,7 +445,11 @@ impl From<cli::Opt> for Config {
             git_plus_style: styles["git-plus-style"],
             relative_paths: opt.relative_paths,
             show_themes: opt.show_themes,
-            side_by_side: opt.side_by_side && !handlers::hunk::is_word_diff(),
+            display_mode: if handlers::hunk::is_word_diff() {
+                DisplayMode::Inline
+            } else {
+                opt.computed.display_mode
+            },
             side_by_side_data,
             styles_map,
             syntax_set: opt.computed.syntax_set,
