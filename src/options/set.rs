@@ -241,12 +241,13 @@ pub fn set_options(
     opt.computed.inspect_raw_lines =
         cli::InspectRawLines::from_str(&opt.inspect_raw_lines).unwrap();
     opt.computed.paging_mode = parse_paging_mode(&opt.paging_mode);
+    opt.computed.display_mode = parse_display_mode(opt.side_by_side.as_deref());
 
     // --color-only is used for interactive.diffFilter (git add -p). side-by-side, and
     // **-decoration-style cannot be used there (does not emit lines in 1-1 correspondence with raw git output).
     // See #274.
     if opt.color_only {
-        opt.side_by_side = false;
+        opt.computed.display_mode = config::DisplayMode::Inline;
         opt.file_decoration_style = "none".to_string();
         opt.commit_decoration_style = "none".to_string();
         opt.hunk_header_decoration_style = "none".to_string();
@@ -394,7 +395,7 @@ fn gather_features(
     if opt.navigate {
         gather_builtin_features_recursively("navigate", &mut features, builtin_features, opt);
     }
-    if opt.side_by_side {
+    if opt.side_by_side.is_some() && opt.side_by_side.as_deref() != Some("never") {
         gather_builtin_features_recursively("side-by-side", &mut features, builtin_features, opt);
     }
 
@@ -558,6 +559,21 @@ fn parse_paging_mode(paging_mode_string: &str) -> PagingMode {
     }
 }
 
+fn parse_display_mode(side_by_side_string: Option<&str>) -> config::DisplayMode {
+    match side_by_side_string {
+        None | Some("never") | Some("false") | Some("inline") => config::DisplayMode::Inline,
+        Some(s) => match s.to_lowercase().as_str() {
+            "always" | "true" | "side-by-side" => config::DisplayMode::SideBySide,
+            "if-mixed" => config::DisplayMode::SideBySideIfMixed,
+            _ => {
+                fatal(format!(
+                    "Invalid value for --side-by-side option: {s} (valid values are \"always\", \"never\", \"if-mixed\", \"side-by-side\", \"inline\", \"true\", and \"false\")",
+                ));
+            }
+        },
+    }
+}
+
 fn parse_width_specifier(width_arg: &str, terminal_width: usize) -> Result<usize, String> {
     let width_arg = width_arg.trim();
 
@@ -673,7 +689,9 @@ pub mod tests {
     use std::fs::remove_file;
 
     use crate::cli;
-    use crate::tests::integration_test_utils;
+    use crate::tests::integration_test_utils::{
+        make_options_from_args, make_options_from_args_and_git_config,
+    };
     use crate::utils::bat::output::PagingMode;
 
     pub const TERMINAL_WIDTH_IN_TESTS: usize = 43;
@@ -738,7 +756,7 @@ pub mod tests {
 ";
         let git_config_path = "delta__test_options_can_be_set_in_git_config.gitconfig";
 
-        let opt = integration_test_utils::make_options_from_args_and_git_config(
+        let opt = make_options_from_args_and_git_config(
             &[],
             Some(git_config_contents),
             Some(git_config_path),
@@ -792,7 +810,7 @@ pub mod tests {
         assert_eq!(opt.plus_non_emph_style, "black black");
         assert_eq!(opt.plus_style, "black black");
         assert!(opt.raw);
-        assert!(opt.side_by_side);
+        assert!(opt.side_by_side.is_some() && opt.side_by_side.as_deref() != Some("never") && opt.side_by_side.as_deref() != Some("false"));
         assert_eq!(opt.syntax_theme, Some("xxxyyyzzz".to_string()));
         assert_eq!(opt.tab_width, 77);
         assert_eq!(opt.true_color, "never");
@@ -817,7 +835,7 @@ pub mod tests {
 ";
         let git_config_path = "delta__test_width_in_git_config_is_honored.gitconfig";
 
-        let opt = integration_test_utils::make_options_from_args_and_git_config(
+        let opt = make_options_from_args_and_git_config(
             &[],
             Some(git_config_contents),
             Some(git_config_path),
@@ -862,5 +880,145 @@ pub mod tests {
         assert_eq!(parse_width_specifier("-12", term_width).unwrap(), 0);
         assert_eq!(parse_width_specifier(" - 12 ", term_width).unwrap(), 0);
         assert_eq!(parse_width_specifier(" 2 - 2 ", term_width).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_side_by_side_cli_backward_compatibility() {
+        // Test backward compatibility of --side-by-side CLI option
+        use crate::config::DisplayMode;
+
+        // Test 1: -s flag (short form) should map to 'always'
+        let opt = make_options_from_args(&["-s"]);
+        assert_eq!(
+            opt.computed.display_mode,
+            DisplayMode::SideBySide,
+            "-s flag should map to DisplayMode::SideBySide"
+        );
+
+        // Test 2: --side-by-side without value should default to 'always'
+        let opt = make_options_from_args(&["--side-by-side"]);
+        assert_eq!(
+            opt.computed.display_mode,
+            DisplayMode::SideBySide,
+            "--side-by-side without value should default to SideBySideMode::Always"
+        );
+
+        // Test 3: --side-by-side=always should work explicitly
+        let opt = make_options_from_args(&["--side-by-side=always"]);
+        assert_eq!(
+            opt.computed.display_mode,
+            DisplayMode::SideBySide,
+            "--side-by-side=always should map to DisplayMode::SideBySide"
+        );
+
+        // Test 4: --side-by-side=never should work
+        let opt = make_options_from_args(&["--side-by-side=never"]);
+        assert_eq!(
+            opt.computed.display_mode,
+            DisplayMode::Inline,
+            "--side-by-side=never should map to DisplayMode::Inline"
+        );
+
+        // Test 5: --side-by-side=if-mixed should work
+        let opt = make_options_from_args(&["--side-by-side=if-mixed"]);
+        assert_eq!(
+            opt.computed.display_mode,
+            DisplayMode::SideBySideIfMixed,
+            "--side-by-side=if-mixed should map to DisplayMode::SideBySideIfMixed"
+        );
+
+        // Test 6: No side-by-side flag should default to Inline
+        let opt = make_options_from_args(&[]);
+        assert_eq!(
+            opt.computed.display_mode,
+            DisplayMode::Inline,
+            "No side-by-side flag should default to DisplayMode::Inline"
+        );
+
+        // Test 7: --color-only should force Inline mode
+        let opt = make_options_from_args(&["--color-only", "--side-by-side=always"]);
+        assert_eq!(
+            opt.computed.display_mode,
+            DisplayMode::Inline,
+            "--color-only should force DisplayMode::Inline even with --side-by-side=always"
+        );
+    }
+
+    #[test]
+    fn test_side_by_side_in_git_config() {
+        // Test that side-by-side can be configured via git config
+        use crate::config::DisplayMode;
+
+        // Test git config with side-by-side = true (legacy boolean)
+        let git_config_contents = b"
+[delta]
+    side-by-side = true
+";
+        let git_config_path = "delta__test_side_by_side_in_git_config.gitconfig";
+        let opt = make_options_from_args_and_git_config(
+            &[],
+            Some(git_config_contents),
+            Some(git_config_path),
+        );
+        assert_eq!(
+            opt.computed.display_mode,
+            DisplayMode::SideBySide,
+            "side-by-side = true in git config should map to SideBySide"
+        );
+        remove_file(git_config_path).unwrap();
+
+        // Test git config with side-by-side = always
+        let git_config_contents = b"
+[delta]
+    side-by-side = always
+";
+        let git_config_path = "delta__test_side_by_side_in_git_config_2.gitconfig";
+        let opt = make_options_from_args_and_git_config(
+            &[],
+            Some(git_config_contents),
+            Some(git_config_path),
+        );
+        assert_eq!(
+            opt.computed.display_mode,
+            DisplayMode::SideBySide,
+            "side-by-side = always in git config should map to SideBySide"
+        );
+        remove_file(git_config_path).unwrap();
+
+        // Test git config with side-by-side = if-mixed
+        let git_config_contents = b"
+[delta]
+    side-by-side = if-mixed
+";
+        let git_config_path = "delta__test_side_by_side_in_git_config_3.gitconfig";
+        let opt = make_options_from_args_and_git_config(
+            &[],
+            Some(git_config_contents),
+            Some(git_config_path),
+        );
+        assert_eq!(
+            opt.computed.display_mode,
+            DisplayMode::SideBySideIfMixed,
+            "side-by-side = if-mixed in git config should map to SideBySideIfMixed"
+        );
+        remove_file(git_config_path).unwrap();
+
+        // Test CLI override of git config
+        let git_config_contents = b"
+[delta]
+    side-by-side = always
+";
+        let git_config_path = "delta__test_side_by_side_in_git_config_4.gitconfig";
+        let opt = make_options_from_args_and_git_config(
+            &["--side-by-side=never"],
+            Some(git_config_contents),
+            Some(git_config_path),
+        );
+        assert_eq!(
+            opt.computed.display_mode,
+            DisplayMode::Inline,
+            "CLI --side-by-side=never should override git config"
+        );
+        remove_file(git_config_path).unwrap();
     }
 }

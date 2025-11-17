@@ -559,7 +559,7 @@ pub mod ansifill {
     impl UseFullPanelWidth {
         pub fn new(config: &Config) -> Self {
             Self(
-                config.side_by_side
+                config.display_mode != crate::config::DisplayMode::Inline
                     && Self::is_odd_with_ansi(&config.decorations_width, &config.line_fill_method),
             )
         }

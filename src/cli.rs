@@ -856,9 +856,22 @@ pub struct Opt {
     /// shown, use --dark or --light, or both, on the command line together with this option.
     pub show_themes: bool,
 
-    #[arg(short = 's', long = "side-by-side")]
+    // TODO: Consider adding a more intuitive --diff-mode or --display-mode option
+    // (e.g., --diff-mode=inline|side-by-side|auto) and deprecating --side-by-side.
+    // The current --side-by-side option is kept for backward compatibility.
+    #[arg(
+        short = 's',
+        long = "side-by-side",
+        value_name = "always|never|if-mixed",
+        num_args = 0..=1,
+        default_missing_value = "always",
+        require_equals = true,
+    )]
     /// Display diffs in side-by-side layout.
-    pub side_by_side: bool,
+    ///
+    /// Options are: always (default when flag is used), never, and if-mixed.
+    /// if-mixed uses side-by-side only for hunks with both additions and deletions.
+    pub side_by_side: Option<String>,
 
     #[arg(long = "syntax-theme", value_name = "SYNTAX_THEME")]
     /// The syntax-highlighting theme to use.
@@ -1183,6 +1196,7 @@ pub struct ComputedValues {
     pub inspect_raw_lines: InspectRawLines,
     pub color_mode: ColorMode,
     pub paging_mode: PagingMode,
+    pub display_mode: crate::config::DisplayMode,
     pub syntax_set: SyntaxSet,
     pub syntax_theme: Option<SyntaxTheme>,
     pub true_color: bool,
